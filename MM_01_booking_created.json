@@ -1,0 +1,206 @@
+{
+  "name": "MM_01_Booking_Created → Push + Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "=/booking-created"
+      },
+      "id": "n1",
+      "name": "Webhook /booking-created",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "SLACK_WEBHOOK_URL",
+              "value": "https://hooks.slack.com/services/REPLACE"
+            },
+            {
+              "name": "FCM_SERVER_KEY",
+              "value": "REPLACE"
+            },
+            {
+              "name": "SIGNING_SECRET",
+              "value": "optional-secret"
+            }
+          ]
+        }
+      },
+      "id": "n2",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const secret=$items('Config')[0].json.SIGNING_SECRET||'';\nconst sig=$headers['x-signature'];\nif(!secret) return [{json:{payload:$json}}];\nconst crypto=require('crypto');\nconst raw=JSON.stringify($json);\nconst dig=crypto.createHmac('sha256',secret).update(raw).digest('hex');\nif(dig!==sig) throw new Error('bad signature');\nreturn [{json:{payload:$json}}];"
+      },
+      "id": "n3",
+      "name": "Verify HMAC (optional)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const p=$json.payload||$json;\nconst msg=`✅ Booking: ${p.booking?.mealType} on ${p.booking?.date} — ₹${p.booking?.price||25}`;\nreturn [{json:{title:'Booking Confirmed', body:msg, text:msg, payload:p}}];"
+      },
+      "id": "n4",
+      "name": "Format Notification",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        },
+        "url": "https://fcm.googleapis.com/fcm/send",
+        "sendBody": true,
+        "jsonParameters": true,
+        "headerParametersJson": "={\"Authorization\":\"key=\" + $items(\"Config\")[0].json.FCM_SERVER_KEY,\"Content-Type\":\"application/json\"}",
+        "bodyParametersJson": "={\"to\": $json.payload?.user?.fcmToken, \"notification\": {\"title\": $json.title, \"body\": $json.body}, \"data\": $json.payload }"
+      },
+      "id": "n5",
+      "name": "Send Push (FCM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1280,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        },
+        "url": "={{$items(\"Config\")[0].json.SLACK_WEBHOOK_URL}}",
+        "sendBody": true,
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"text\": $json.text}"
+      },
+      "id": "n6",
+      "name": "Send Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1280,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "responseBody": "={\"ok\":true}",
+        "responseCode": 200
+      },
+      "id": "n7",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook /booking-created": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Verify HMAC (optional)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify HMAC (optional)": {
+      "main": [
+        [
+          {
+            "node": "Format Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Notification": {
+      "main": [
+        [
+          {
+            "node": "Send Push (FCM)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Push (FCM)": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Kolkata"
+  }
+}

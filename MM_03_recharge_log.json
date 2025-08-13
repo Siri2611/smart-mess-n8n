@@ -1,0 +1,327 @@
+{
+  "name": "MM_03_Recharge_Log → Verify + Notify",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "=/recharge-log"
+      },
+      "id": "r1",
+      "name": "Webhook /recharge-log",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "SLACK_WEBHOOK_URL",
+              "value": "https://hooks.slack.com/services/REPLACE"
+            },
+            {
+              "name": "STRIPE_SECRET_KEY",
+              "value": "sk_test_REPLACE"
+            },
+            {
+              "name": "RAZORPAY_BASIC_USER",
+              "value": "rzp_test_REPLACE"
+            },
+            {
+              "name": "RAZORPAY_BASIC_PASS",
+              "value": "REPLACE"
+            },
+            {
+              "name": "FCM_SERVER_KEY",
+              "value": "REPLACE"
+            }
+          ]
+        }
+      },
+      "id": "r2",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const p=$json; const provider=(p.payment?.provider||'').toLowerCase(); return [{json:{provider,p}}];"
+      },
+      "id": "r3",
+      "name": "Pick Provider",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.provider}}",
+              "operation": "equal",
+              "value2": "razorpay"
+            }
+          ]
+        }
+      },
+      "id": "r4",
+      "name": "Provider = Razorpay?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        },
+        "url": "={{'https://api.razorpay.com/v1/payments/' + $json.p.payment?.paymentId}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth"
+      },
+      "id": "r5",
+      "name": "Verify Razorpay Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1280,
+        220
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "REPLACE_RAZORPAY_BASIC_CRED",
+          "name": "Razorpay Basic"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        },
+        "url": "={{'https://api.stripe.com/v1/payment_intents/' + $json.p.payment?.paymentId}}",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $items('Config')[0].json.STRIPE_SECRET_KEY}}"
+            }
+          ]
+        }
+      },
+      "id": "r6",
+      "name": "Verify Stripe Payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1280,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const p=$json.p||$json; const amount=p.payment?.amount||0; const txt=`💳 Wallet recharge: ₹${amount} via ${p.payment?.provider}`; return [{json:{text:txt, title:'Wallet Recharge', body:`₹${amount} added.`, payload:p}}];"
+      },
+      "id": "r7",
+      "name": "Format Receipt",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        },
+        "url": "={{$items(\"Config\")[0].json.SLACK_WEBHOOK_URL}}",
+        "sendBody": true,
+        "jsonParameters": true,
+        "bodyParametersJson": "={\"text\": $json.text}"
+      },
+      "id": "r8",
+      "name": "Send Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1760,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "response": {
+            "responseFormat": "json"
+          }
+        },
+        "url": "https://fcm.googleapis.com/fcm/send",
+        "sendBody": true,
+        "jsonParameters": true,
+        "headerParametersJson": "={\"Authorization\":\"key=\" + $items(\"Config\")[0].json.FCM_SERVER_KEY,\"Content-Type\":\"application/json\"}",
+        "bodyParametersJson": "={\"to\": $json.payload?.user?.fcmToken, \"notification\": {\"title\": $json.title, \"body\": $json.body}, \"data\": $json.payload }"
+      },
+      "id": "r9",
+      "name": "Send Push (FCM)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "responseBody": "={\"ok\":true}",
+        "responseCode": 200
+      },
+      "id": "r10",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook /recharge-log": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Pick Provider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Provider": {
+      "main": [
+        [
+          {
+            "node": "Provider = Razorpay?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provider = Razorpay?": {
+      "main": [
+        [
+          {
+            "node": "Verify Razorpay Payment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Verify Stripe Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Razorpay Payment": {
+      "main": [
+        [
+          {
+            "node": "Format Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Stripe Payment": {
+      "main": [
+        [
+          {
+            "node": "Format Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Receipt": {
+      "main": [
+        [
+          {
+            "node": "Send Push (FCM)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Push (FCM)": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Kolkata"
+  }
+}

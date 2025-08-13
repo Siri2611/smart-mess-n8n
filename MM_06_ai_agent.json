@@ -1,0 +1,116 @@
+{
+  "name": "MM_06_MessMate AI Agent (Webhook → LLM → JSON)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "=/agent",
+        "responseMode": "responseNode"
+      },
+      "id": "a1",
+      "name": "Webhook /agent",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "chat",
+        "model": "gpt-4o-mini",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "text": "You are MessMate AI Agent for a college mess app. Output STRICT JSON only (no markdown):\\n{\\n  \"reply\": \"string\",\\n  \"proposedActions\": [\\n     {\"type\": \"book\", \"date\": \"YYYY-MM-DD\", \"mealType\": \"breakfast|lunch|dinner\", \"amount\": 25},\\n     {\"type\": \"cancel\", \"bookingId\": \"...\"},\\n     {\"type\": \"recharge\", \"amount\": 200}\\n  ],\\n  \"metadata\": {\"confidence\": 0.0, \"notes\": \"string\"}\\n}\\nRules: price per meal is ₹25; if walletBalance < 25 and user wants to book, suggest recharge. If unsure, ask a brief clarifying question in 'reply'. Do not invent bookingIds or balances.",
+            "type": "system"
+          },
+          {
+            "text": "User message: {{$json.message || ''}}\\nContext:\\n{\\n  \"menu\": {{$json.menu || null}},\\n  \"walletBalance\": {{$json.walletBalance || null}},\\n  \"bookings\": {{$json.bookings || null}}\\n}",
+            "type": "user"
+          }
+        ]
+      },
+      "id": "a2",
+      "name": "LLM (Structured JSON)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 4,
+      "position": [
+        520,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "let content=$json.data?.[0]?.content||$json.data||$json; try{ if(typeof content==='string') content=JSON.parse(content);}catch(e){ content={reply:'Sorry, I could not understand that. Can you rephrase?', proposedActions:[], metadata:{confidence:0.0, notes:'parse_error'}};} return [{json:content}];"
+      },
+      "id": "a3",
+      "name": "Parse JSON safely",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "responseBody": "={{$json}}",
+        "responseCode": 200
+      },
+      "id": "a4",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook /agent": {
+      "main": [
+        [
+          {
+            "node": "LLM (Structured JSON)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM (Structured JSON)": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON safely",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON safely": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Kolkata"
+  }
+}
